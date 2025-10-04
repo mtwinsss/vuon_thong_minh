@@ -108,7 +108,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // ====== Gửi lệnh điều khiển ======
   void sendControl(String device, bool state) {
-    socket.emit("controlDevice", {"device": device, "state": state});
+    socket.emit("controlDevice", {"controlDevice": device, "state": state}); //đã sửa cho phù hợp với file socketHandler.js
     debugPrint("📤 Sent control → $device: $state");
   }
 
