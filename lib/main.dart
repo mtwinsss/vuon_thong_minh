@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 void main() {
   runApp(const MyApp());
@@ -13,10 +14,9 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Smart Garden Dashboard (Demo)',
+      title: 'Smart Garden Dashboard',
       theme: ThemeData(primarySwatch: Colors.green),
       home: const DashboardPage(),
-      debugShowCheckedModeBanner: false,
     );
   }
 }
@@ -45,9 +45,14 @@ class _DashboardPageState extends State<DashboardPage> {
   Timer? historyTimer;
   int timeIndex = 0;
 
+  late IO.Socket socket;
+
+  static const String SERVER_URL = "http://192.168.1.10:3000"; // ⚠️ Đổi IP cho đúng
+
   @override
   void initState() {
     super.initState();
+    connectToServer();
 
     // Giả lập dữ liệu cảm biến mỗi 2 giây
     updateTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
@@ -59,8 +64,8 @@ class _DashboardPageState extends State<DashboardPage> {
       });
     });
 
-    // Ghi lại lịch sử mỗi 5 phút (demo: 10 giây cho dễ test)
-    historyTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+    // Ghi lại lịch sử mỗi 5 phút
+    historyTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
       setState(() {
         tempHistory.add(FlSpot(timeIndex.toDouble(), temperature));
         humHistory.add(FlSpot(timeIndex.toDouble(), humidity));
@@ -71,9 +76,40 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   void dispose() {
+    socket.dispose();
     updateTimer?.cancel();
     historyTimer?.cancel();
     super.dispose();
+  }
+
+  // ====== Kết nối socket ======
+  void connectToServer() {
+    socket = IO.io(
+      SERVER_URL,
+      IO.OptionBuilder().setTransports(['websocket']).disableAutoConnect().build(),
+    );
+
+    socket.connect();
+
+    socket.onConnect((_) => debugPrint("✅ Connected to server"));
+    socket.onDisconnect((_) => debugPrint("❌ Disconnected"));
+
+    socket.on("sensor_update", (data) {
+      if (data != null) {
+        setState(() {
+          temperature = (data['temperature'] ?? 0).toDouble();
+          humidity = (data['humidity'] ?? 0).toDouble();
+          soilHumidity = (data['soil'] ?? Random().nextDouble() * 100).toDouble();
+          soilStatus = getSoilStatus(soilHumidity);
+        });
+      }
+    });
+  }
+
+  // ====== Gửi lệnh điều khiển ======
+  void sendControl(String device, bool state) {
+    socket.emit("controlDevice", {"device": device, "state": state});
+    debugPrint("📤 Sent control → $device: $state");
   }
 
   // ====== Hàm xác định trạng thái độ ẩm đất ======
@@ -142,7 +178,7 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Smart Garden Dashboard (Demo)")),
+      appBar: AppBar(title: const Text("Smart Garden Dashboard")),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -186,18 +222,30 @@ class _DashboardPageState extends State<DashboardPage> {
 
             const SizedBox(height: 20),
 
-            // Điều khiển thiết bị (mô phỏng)
-            buildDeviceControl("Đèn LED", ledOn, (val) => ledOn = val),
-            buildDeviceControl("Máy bơm", pumpOn, (val) => pumpOn = val),
-            buildDeviceControl("Mái che", servoOn, (val) => servoOn = val),
+            // Điều khiển thiết bị
+            buildDeviceControl("Đèn LED", ledOn, (val) {
+              ledOn = val;
+              sendControl("led", val);
+            }),
+            buildDeviceControl("Máy bơm", pumpOn, (val) {
+              pumpOn = val;
+              sendControl("pump", val);
+            }),
+            buildDeviceControl("Mái che", servoOn, (val) {
+              servoOn = val;
+              sendControl("servo", val);
+            }),
 
             const SizedBox(height: 20),
 
             // Biểu đồ lịch sử
-            const Text("Lịch sử nhiệt độ & độ ẩm (demo 10s/lần)", style: TextStyle(fontSize: 18)),
+            const Text("Lịch sử nhiệt độ & độ ẩm (5 phút/lần)",
+                style: TextStyle(fontSize: 18)),
             const SizedBox(height: 10),
-            if (tempHistory.isNotEmpty) buildChart(tempHistory, "Temperature", Colors.red),
-            if (humHistory.isNotEmpty) buildChart(humHistory, "Humidity", Colors.blue),
+            if (tempHistory.isNotEmpty)
+              buildChart(tempHistory, "Temperature", Colors.red),
+            if (humHistory.isNotEmpty)
+              buildChart(humHistory, "Humidity", Colors.blue),
           ],
         ),
       ),
