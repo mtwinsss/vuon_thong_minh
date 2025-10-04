@@ -13,9 +13,10 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Smart Garden Dashboard',
+      title: 'Smart Garden Dashboard (Demo)',
       theme: ThemeData(primarySwatch: Colors.green),
       home: const DashboardPage(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
@@ -28,8 +29,12 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
+  // ====== Dữ liệu cảm biến ======
   double temperature = 0;
   double humidity = 0;
+  double soilHumidity = 0;
+  String soilStatus = "Đang đo...";
+
   bool ledOn = false;
   bool pumpOn = false;
   bool servoOn = false;
@@ -43,16 +48,19 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
+
     // Giả lập dữ liệu cảm biến mỗi 2 giây
     updateTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
       setState(() {
-        temperature = 20 + Random().nextDouble() * 10; // 20-30 °C
-        humidity = 50 + Random().nextDouble() * 20;    // 50-70 %
+        temperature = 20 + Random().nextDouble() * 10; // 20–30 °C
+        humidity = 50 + Random().nextDouble() * 20; // 50–70 %
+        soilHumidity = Random().nextDouble() * 100; // 0–100 %
+        soilStatus = getSoilStatus(soilHumidity);
       });
     });
 
-    // Ghi lại dữ liệu mỗi 5 phút
-    historyTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
+    // Ghi lại lịch sử mỗi 5 phút (demo: 10 giây cho dễ test)
+    historyTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
       setState(() {
         tempHistory.add(FlSpot(timeIndex.toDouble(), temperature));
         humHistory.add(FlSpot(timeIndex.toDouble(), humidity));
@@ -68,6 +76,14 @@ class _DashboardPageState extends State<DashboardPage> {
     super.dispose();
   }
 
+  // ====== Hàm xác định trạng thái độ ẩm đất ======
+  String getSoilStatus(double soil) {
+    if (soil < 30) return "🌵 Quá khô";
+    if (soil < 70) return "🌿 Bình thường";
+    return "💧 Quá ẩm";
+  }
+
+  // ====== UI ======
   Widget buildDeviceControl(String name, bool state, Function(bool) onChanged) {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -105,10 +121,28 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  Widget _buildSensorCard(String title, String value, Color color) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 4,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        width: 150,
+        child: Column(
+          children: [
+            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Text(value, style: TextStyle(fontSize: 20, color: color, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Smart Garden Dashboard")),
+      appBar: AppBar(title: const Text("Smart Garden Dashboard (Demo)")),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -123,36 +157,47 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
             const SizedBox(height: 20),
 
-            // Nút điều khiển thiết bị
+            // Thẻ hiển thị độ ẩm đất
+            Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              elevation: 4,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                width: double.infinity,
+                child: Column(
+                  children: [
+                    const Text("🌱 Độ ẩm đất", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text("${soilHumidity.toStringAsFixed(1)} %",
+                        style: const TextStyle(fontSize: 20, color: Colors.brown, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(soilStatus,
+                        style: TextStyle(
+                            fontSize: 18,
+                            color: soilStatus.contains("Quá khô")
+                                ? Colors.red
+                                : soilStatus.contains("Bình thường")
+                                ? Colors.green
+                                : Colors.blue)),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Điều khiển thiết bị (mô phỏng)
             buildDeviceControl("Đèn LED", ledOn, (val) => ledOn = val),
             buildDeviceControl("Máy bơm", pumpOn, (val) => pumpOn = val),
-            buildDeviceControl("Servo", servoOn, (val) => servoOn = val),
+            buildDeviceControl("Mái che", servoOn, (val) => servoOn = val),
 
             const SizedBox(height: 20),
 
             // Biểu đồ lịch sử
-            const Text("Lịch sử nhiệt độ & độ ẩm (5 phút/lần)", style: TextStyle(fontSize: 18)),
+            const Text("Lịch sử nhiệt độ & độ ẩm (demo 10s/lần)", style: TextStyle(fontSize: 18)),
             const SizedBox(height: 10),
             if (tempHistory.isNotEmpty) buildChart(tempHistory, "Temperature", Colors.red),
             if (humHistory.isNotEmpty) buildChart(humHistory, "Humidity", Colors.blue),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSensorCard(String title, String value, Color color) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 4,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        width: 150,
-        child: Column(
-          children: [
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            Text(value, style: TextStyle(fontSize: 20, color: color, fontWeight: FontWeight.bold)),
           ],
         ),
       ),
